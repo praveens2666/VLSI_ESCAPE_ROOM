@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VLSI Escape Room</title>
+<style>
+  :root{ --bg:#03060a; --neon:#00ffd1; --accent:#7c5cff; --muted:#66e0c6; --glass: rgba(255,255,255,0.03) }
+  html,body{height:100%;margin:0}
+  body {
+    font-family: Inter, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    background: radial-gradient(800px 400px at 10% 10%, rgba(124,92,255,0.03), transparent), var(--bg);
+    color: var(--neon);
+    -webkit-font-smoothing:antialiased;
+    padding: 20px;
+    box-sizing: border-box;
+    display: flex;flex-direction:column;align-items:center;
+  }
+  .container{width:100%;max-width:980px}
+  h1{margin:6px 0 6px;font-size:20px;text-align:left}
+  .meta{font-size:13px;color:var(--muted);text-align:left;margin-bottom:12px}
+
+  .puzzle {display:none;border:1px solid rgba(0,255,209,0.06);padding:14px;margin:16px 0;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));box-shadow:0 8px 30px rgba(0,0,0,0.6);} 
+  .puzzle.active{display:block}
+  .puzzle.unlocked{box-shadow:0 0 40px rgba(0,255,209,0.12);border-color:var(--neon);transform:translateY(-4px);transition:all .28s ease}
+
+  .row{display:flex;gap:12px;align-items:center}
+  input[type=number]{padding:8px;border-radius:6px;border:1px solid var(--glass);background:transparent;color:inherit;width:140px}
+  button{padding:8px 12px;border-radius:8px;border:none;background:var(--neon);color:#001;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+
+  .hint,.steps{background:rgba(0,0,0,0.42);padding:10px;border-radius:8px;margin-top:10px;color:var(--muted);display:none}
+  .hint.show,.steps.show{display:block}
+  .feedback{margin-top:8px;color:var(--accent);font-weight:700;display:none}
+
+  /* graph */
+  .graph{width:100%;height:260px;background:linear-gradient(180deg, rgba(0,0,0,0.2), rgba(0,0,0,0.12));border-radius:8px;display:grid;place-items:center;overflow:hidden}
+  svg .trace{stroke-dasharray:1000;stroke-dashoffset:1000;transition:stroke-dashoffset 1.6s ease}
+
+  /* Door Animation */
+  #door-scene{display:none;position:relative;height:340px;overflow:hidden;margin-top:26px;border-radius:12px}
+  .door{position:absolute;top:0;width:50%;height:100%;background:linear-gradient(180deg,#001 0%, #022 40%, #00ffd1 100%);box-shadow:inset 0 0 30px rgba(0,255,209,0.06);z-index:6;transition:transform 1.4s cubic-bezier(.2,.9,.2,1)}
+  .door.left{left:0;border-right:1px solid rgba(255,255,255,0.03)}
+  .door.right{right:0;border-left:1px solid rgba(255,255,255,0.03)}
+  .door.open.left{transform:translateX(-120%)}
+  .door.open.right{transform:translateX(120%)}
+  .beam{position:absolute;top:0;left:50%;transform:translateX(-50%);width:40px;height:100%;background:linear-gradient(90deg,#fff,#9ff);filter:blur(12px);opacity:0.95;animation:pulse 0.7s infinite;z-index:5}
+  @keyframes pulse{0%{opacity:0.9}50%{opacity:0.25}100%{opacity:0.9}}
+  #access{font-size:38px;color:#9ff;text-shadow:0 0 28px rgba(0,255,209,0.25);margin-top:16px;opacity:0;transition:opacity .6s}
+  #access.show{opacity:1}
+
+  /* confetti canvas overlay */
+  #confetti{position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:40}
+
+  /* footer controls */
+  .controls{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px}
+  .small{font-size:12px;color:var(--muted)}
+
+  @media(max-width:720px){ .row{flex-direction:column;align-items:flex-start} input[type=number]{width:100%} h1{font-size:18px} }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔒 VLSI Escape Room</h1>
+
+  <!-- Puzzle 1 -->
+  <section id="puzzle1" class="puzzle active">
+    <h2>Puzzle 1 — Find threshold voltage <small>V<sub>t</sub></small></h2>
+    <div class="graph" aria-hidden="false">
+      <!-- SVG placeholder; path will be drawn by JS from equations -->
+      <svg id="svg_p1" viewBox="0 0 600 260" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="I_D vs V_GS">
+        <rect x="0" y="0" width="600" height="260" fill="transparent"/>
+        <defs>
+          <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#00ffd1" stop-opacity="1"/><stop offset="1" stop-color="#7c5cff" stop-opacity="0.9"/></linearGradient>
+        </defs>
+        <g id="axes_p1"></g>
+        <path id="trace_p1" class="trace" stroke="url(#g1)" stroke-width="3" fill="none" stroke-linecap="round" d="" />
+        <line id="p1_marker" x1="0" y1="0" x2="0" y2="0" stroke="#7c5cff" stroke-dasharray="6 4" opacity="0.06" />
+      </svg>
+    </div>
+    <p class="meta">Parameters used (level-1 model): μ<sub>n</sub>C<sub>ox</sub> = <span id="param_mu"></span> μA/V², W/L = <span id="param_wl"></span>, V<sub>t</sub> = <span id="param_vt"></span> V.</p>
+
+    <div class="row" style="margin-top:10px">
+      <input id="ans1" type="number" step="0.01" placeholder="e.g. 0.90" aria-label="Vt answer" />
+      <button id="p1_submit">Submit</button>
+      <button class="ghost" onclick="toggleHint('p1_hint')">Show hint</button>
+      <button class="ghost" onclick="toggleSteps('p1_steps')">Show steps</button>
+    </div>
+    <div id="p1_hint" class="hint">Extrapolate I<sub>D</sub>→0 or plot √I<sub>D</sub> vs V<sub>GS</sub> and find the x-intercept.</div>
+    <div id="p1_steps" class="steps">
+      <ol><li>Use the plotted I<sub>D</sub>(V<sub>GS</sub>) curve (from the given parameters).</li><li>Find the gate voltage where current extrapolates to zero — that's V<sub>t</sub>.</li><li>Round to two decimals (±0.05 V).</li></ol>
+    </div>
+    <div id="p1_feedback" class="feedback"></div>
+  </section>
+
+  <!-- Puzzle 2 -->
+  <section id="puzzle2" class="puzzle">
+    <h2>Puzzle 2 — Compute drain current <small>I<sub>D</sub> (saturation)</small></h2>
+    <div class="meta">Given: μ<sub>n</sub>C<sub>ox</sub>, W/L (from parameters), and V<sub>GS</sub> = <span id="param_vgs"></span> V. Use V<sub>t</sub> from Puzzle 1.</div>
+    <div style="margin-top:8px" class="row">
+      <input id="ans2" type="number" step="1" placeholder="e.g. 810" aria-label="Id answer" />
+      <button id="p2_submit">Submit</button>
+      <button class="ghost" onclick="toggleHint('p2_hint')">Show hint</button>
+      <button class="ghost" onclick="toggleSteps('p2_steps')">Show steps</button>
+    </div>
+    <div id="p2_hint" class="hint">I<sub>D</sub> = 0.5 × μ<sub>n</sub>C<sub>ox</sub> × (W/L) × (V<sub>GS</sub> − V<sub>t</sub>)² (µA).</div>
+    <div id="p2_steps" class="steps"><ol><li>ΔV = V<sub>GS</sub> − V<sub>t</sub></li><li>(ΔV)²</li><li>prefactor = 0.5 × μC<sub>ox</sub> × W/L</li><li>I<sub>D</sub> = prefactor × (ΔV)², round to integer µA.</li></ol></div>
+    <div class="graph" style="margin-top:10px"><svg id="svg_p2" viewBox="0 0 600 260" width="100%" height="100%"></svg></div>
+    <div id="p2_feedback" class="feedback"></div>
+  </section>
+
+  <!-- Puzzle 3 -->
+  <section id="puzzle3" class="puzzle">
+    <h2>Puzzle 3 — Body effect (adjusted V<sub>t</sub>)</h2>
+    <div class="meta">Formula: V<sub>t</sub>=V<sub>t0</sub> + γ(√(2φ<sub>F</sub> + V<sub>SB</sub>) − √(2φ<sub>F</sub>)).</div>
+    <div style="margin-top:8px" class="row">
+      <input id="ans3" type="number" step="0.01" placeholder="e.g. 1.01" aria-label="adjusted Vt" />
+      <button id="p3_submit">Submit</button>
+      <button class="ghost" onclick="toggleHint('p3_hint')">Show hint</button>
+      <button class="ghost" onclick="toggleSteps('p3_steps')">Show steps</button>
+    </div>
+    <div id="p3_hint" class="hint">Compute the square roots and multiply by γ, then add to V<sub>t0</sub>.</div>
+    <div id="p3_steps" class="steps"><ol><li>Compute 2φ<sub>F</sub> + V<sub>SB</sub></li><li>Take square roots and subtract</li><li>Multiply by γ and add to V<sub>t0</sub>.</li></ol></div>
+    <div class="graph" style="margin-top:10px"><svg id="svg_p3" viewBox="0 0 600 260" width="100%" height="100%"></svg></div>
+    <div id="p3_feedback" class="feedback"></div>
+  </section>
+
+  <!-- Puzzle 4 -->
+  <section id="puzzle4" class="puzzle">
+    <h2>Puzzle 4 — CMOS inverter switching threshold V<sub>M</sub></h2>
+    <div class="meta">Compute V<sub>M</sub> from the inverter transfer curve (balanced devices simplify to V<sub>DD</sub>/2).</div>
+    <div style="margin-top:8px" class="row">
+      <input id="ans4" type="number" step="0.01" placeholder="e.g. 2.50" aria-label="Vm answer" />
+      <button id="p4_submit">Submit</button>
+      <button class="ghost" onclick="toggleHint('p4_hint')">Show hint</button>
+      <button class="ghost" onclick="toggleSteps('p4_steps')">Show steps</button>
+    </div>
+    <div id="p4_hint" class="hint">Balanced inverter → V<sub>M</sub> ≈ V<sub>DD</sub>/2. The interactive transfer curve below is generated from level-1 equations (idealized).</div>
+    <div id="p4_steps" class="steps"><ol><li>Inspect the transfer curve (V<sub>OUT</sub> vs V<sub>IN</sub>).</li><li>Find Vin where Vout crosses Vin (or where n/p currents match) — that's V<sub>M</sub>.</li></ol></div>
+    <div class="graph" style="margin-top:10px"><svg id="svg_p4" viewBox="0 0 600 260" width="100%" height="100%"></svg></div>
+    <div id="p4_feedback" class="feedback"></div>
+  </section>
+
+  <!-- Final scene -->
+  <div id="door-scene">
+    <div class="door left"></div>
+    <div class="door right"></div>
+    <div class="beam"></div>
+  </div>
+  <div id="access">ACCESS GRANTED</div>
+
+  <div class="controls">
+    <button id="resetBtn" class="ghost">Reset Game</button>
+   
+  </div>
+</div>
+
+<!-- confetti canvas -->
+<canvas id="confetti"></canvas>
+
+<script>
+/* ------------------ Parameters (level-1 NMOS/PMOS) ------------------*/
+const PARAMS = {
+  muCox: 200.0,   // μA/V^2
+  WL: 10.0,       // unitless
+  Vt: 0.90,       // V (true threshold used to draw graphs)
+  Vt0: 0.90,      // body-effect base threshold
+  gamma: 0.40,    // V^1/2
+  twoPhiF: 0.60,  // V
+  Vsb: 0.50,      // V (used for puzzle 3)
+  Vdd: 5.0,       // V
+  Vgs_p2: 1.80    // V (for puzzle 2)
+};
+
+// compute answers from parameters (no hardcoded dummies)
+function Id_uA(Vgs, Vt=PARAMS.Vt){ const diff = Math.max(0, Vgs - Vt); return 0.5 * PARAMS.muCox * PARAMS.WL * diff * diff; }
+const ANSWERS = {
+  p1: PARAMS.Vt,
+  p2: Math.round(Id_uA(PARAMS.Vgs_p2)),
+  p3: (function(){ const val = PARAMS.Vt0 + PARAMS.gamma*(Math.sqrt(PARAMS.twoPhiF + PARAMS.Vsb) - Math.sqrt(PARAMS.twoPhiF)); return Number(val.toFixed(6)); })(),
+  p4: PARAMS.Vdd/2
+};
+
+// update parameter display in UI
+document.addEventListener('DOMContentLoaded', ()=>{
+  const el = id => document.getElementById(id);
+  el('param_mu').textContent = PARAMS.muCox;
+  el('param_wl').textContent = PARAMS.WL;
+  el('param_vt').textContent = PARAMS.Vt.toFixed(2);
+  el('param_vgs').textContent = PARAMS.Vgs_p2.toFixed(2);
+
+  // draw initial graphs
+  drawP1();
+  drawP2();
+  drawP3();
+  drawP4();
+
+  // attach handlers (they use computed ANSWERS)
+  el('p1_submit').addEventListener('click', check1);
+  el('p2_submit').addEventListener('click', check2);
+  el('p3_submit').addEventListener('click', check3);
+  el('p4_submit').addEventListener('click', check4);
+  el('resetBtn').addEventListener('click', ()=>location.reload());
+
+  // animate trace reveal when puzzle becomes visible
+  // show P1 trace immediately
+  requestAnimationFrame(()=>{ const t = document.getElementById('trace_p1'); if(t) t.style.strokeDashoffset = '0'; });
+});
+
+/* ------------------ Drawing helpers (SVG) ------------------*/
+function mapX(x, xMin, xMax, width=600, margin=40){ return margin + (x - xMin)/(xMax - xMin)*(width - 2*margin); }
+function mapY(y, yMin, yMax, height=260, margin=20){ // invert y for svg
+  const normal = (y - yMin)/(yMax - yMin);
+  return height - margin - normal*(height - 2*margin);
+}
+
+function pathFromPoints(points){ return points.map((p,i)=> (i===0?`M${p.x} ${p.y}`:`L${p.x} ${p.y}`)).join(' '); }
+
+/* Puzzle 1: ID vs VGS */
+function drawP1(){ const svg = document.getElementById('svg_p1'); const trace = document.getElementById('trace_p1'); const marker = document.getElementById('p1_marker');
+  const width = 600, height = 260; const vmin=0, vmax=2.5; const idMaxEstimate = Id_uA(vmax);
+  // create axes ticks
+  const axes = [];
+  for(let v=0; v<=vmax; v+=0.5){ const x = mapX(v, vmin, vmax, width, 40); axes.push(`<line x1="${x}" y1="${height-20}" x2="${x}" y2="${height-20+6}" stroke="#123"/>`); axes.push(`<text x="${x-8}" y="${height-2}" fill="#66e0c6" font-size="11">${v.toFixed(1)}</text>`); }
+  // build points
+  const pts = [];
+  const samples = 120;
+  for(let i=0;i<=samples;i++){ const Vgs = vmin + (vmax-vmin)*i/samples; const Id = Id_uA(Vgs); const x = mapX(Vgs, vmin, vmax, width, 40); const y = mapY(Id, 0, idMaxEstimate, height, 20); pts.push({x,y}); }
+  trace.setAttribute('d', pathFromPoints(pts));
+  // marker at true Vt
+  const mx = mapX(PARAMS.Vt, vmin, vmax, width, 40); marker.setAttribute('x1', mx); marker.setAttribute('x2', mx); marker.setAttribute('y1', 12); marker.setAttribute('y2', height-20);
+  // set initial dash offset for animation
+  trace.style.strokeDashoffset = trace.getTotalLength ? trace.getTotalLength() : 1000;
+}
+
+/* Puzzle 2: small indicator showing point at VGS */
+function drawP2(){ const svg = document.getElementById('svg_p2'); svg.innerHTML = '';
+  const width = 600, height = 260; const vmin=0, vmax=2.5; const idMax = Id_uA(vmax);
+  // axis lines
+  svg.innerHTML += `<line x1="40" y1="${height-20}" x2="580" y2="${height-20}" stroke="#123"/>`;
+  svg.innerHTML += `<text x="12" y="20" fill="#66e0c6" font-size="12">I_D (µA)</text>`;
+  svg.innerHTML += `<text x="540" y="${height-2}" fill="#66e0c6" font-size="12">V_GS (V)</text>`;
+  // curve
+  const samples = 120; let d='';
+  for(let i=0;i<=samples;i++){ const Vgs = vmin + (vmax-vmin)*i/samples; const Id = Id_uA(Vgs); const x = mapX(Vgs, vmin, vmax, width, 40); const y = mapY(Id, 0, idMax, height, 20); d += (i===0?`M${x} ${y}`:` L ${x} ${y}`); }
+  svg.innerHTML += `<path d="${d}" stroke="#00ffd1" stroke-width="2.6" fill="none" stroke-linecap="round"/>`;
+  // mark the Vgs point and value
+  const px = mapX(PARAMS.Vgs_p2, vmin, vmax, width, 40); const py = mapY(Id_uA(PARAMS.Vgs_p2), 0, idMax, height, 20);
+  svg.innerHTML += `<circle cx="${px}" cy="${py}" r="5" fill="#7c5cff"/>`;
+  svg.innerHTML += `<text x="${px+8}" y="${py-8}" fill="#9ff" font-size="12">${Math.round(Id_uA(PARAMS.Vgs_p2))} µA</text>`;
+}
+
+/* Puzzle 3: Vt vs Vsb line */
+function drawP3(){ const svg = document.getElementById('svg_p3'); svg.innerHTML=''; const width=600,height=260; const vmin=0,vmax=1.2; const samples=120; let d='';
+  // compute vt over Vsb range
+  const vtVals = [];
+  for(let i=0;i<=samples;i++){ const Vsb = vmin + (vmax-vmin)*i/samples; const vt = PARAMS.Vt0 + PARAMS.gamma*(Math.sqrt(PARAMS.twoPhiF + Vsb) - Math.sqrt(PARAMS.twoPhiF)); vtVals.push({Vsb,vt}); }
+  // map ranges
+  const vtMin = Math.min(...vtVals.map(p=>p.vt)); const vtMax = Math.max(...vtVals.map(p=>p.vt));
+  for(let i=0;i<vtVals.length;i++){ const p=vtVals[i]; const x=mapX(p.Vsb,vmin,vmax,width,40); const y=mapY(p.vt, vtMin, vtMax, height, 20); d += (i===0?`M${x} ${y}`:` L ${x} ${y}`); }
+  svg.innerHTML += `<line x1="40" y1="${height-20}" x2="580" y2="${height-20}" stroke="#123"/>`;
+  svg.innerHTML += `<path d="${d}" stroke="#00ffd1" stroke-width="2.6" fill="none"/>`;
+  // mark the Vsb used and computed vt
+  const px = mapX(PARAMS.Vsb,vmin,vmax,width,40); const py = mapY(ANSWERS.p3, vtMin, vtMax, height, 20);
+  svg.innerHTML += `<circle cx="${px}" cy="${py}" r="5" fill="#7c5cff"/>`;
+  svg.innerHTML += `<text x="${px+8}" y="${py-8}" fill="#9ff" font-size="12">V_t=${ANSWERS.p3.toFixed(2)} V</text>`;
+}
+
+/* Puzzle 4: inverter transfer (idealized symmetric) */
+function drawP4(){ const svg=document.getElementById('svg_p4'); svg.innerHTML=''; const width=600,height=260; const vinMin=0, vinMax=PARAMS.Vdd; const samples=160; let d='';
+  for(let i=0;i<=samples;i++){ const Vin = vinMin + (vinMax-vinMin)*i/samples; // idealized transfer: use a smooth sigmoid around Vdd/2
+    const k=3.5; const Vout = PARAMS.Vdd/(1+Math.exp(k*(Vin-PARAMS.Vdd/2)));
+    const x=mapX(Vin,vinMin,vinMax,width,40); const y=mapY(Vout,0,PARAMS.Vdd,height,20); d += (i===0?`M${x} ${y}`:` L ${x} ${y}`); }
+  svg.innerHTML += `<line x1="40" y1="${height-20}" x2="580" y2="${height-20}" stroke="#123"/>`;
+  svg.innerHTML += `<path d="${d}" stroke="#00ffd1" stroke-width="2.6" fill="none"/>`;
+  // marker at Vm
+  const mx = mapX(ANSWERS.p4, vinMin, vinMax, width, 40); svg.innerHTML += `<line x1="${mx}" y1="12" x2="${mx}" y2="${height-20}" stroke="#7c5cff" stroke-dasharray="6 4" opacity="0.12"/>`;
+  svg.innerHTML += `<text x="${mx-18}" y="${height-2}" fill="#9aa6b2" font-size="12">${ANSWERS.p4.toFixed(2)} V</text>`;
+}
+
+/* ------------------ Game logic (uses computed ANSWERS) ------------------*/
+let locked = false;
+const $ = id => document.getElementById(id);
+function showFeedback(id,msg,ok=true){ const el=$(id); el.style.display='block'; el.style.color = ok? 'var(--muted)':'#ff6b6b'; el.textContent=msg; }
+function clearFeedback(id){ const el=$(id); el.style.display='none'; el.textContent=''; }
+function toggleHint(id){ $(id).classList.toggle('show'); }
+function toggleSteps(id){ $(id).classList.toggle('show'); }
+function markUnlocked(el){ el.classList.add('unlocked'); }
+function debounceButton(btn, fn, ms=400){ btn.disabled=true; setTimeout(()=>btn.disabled=false, ms); fn(); }
+
+function check1(){ if(locked) return; debounceButton($('p1_submit'), ()=>{
+  clearFeedback('p1_feedback'); const a=parseFloat($('ans1').value);
+  if(!Number.isFinite(a)){ showFeedback('p1_feedback','Enter a numeric value.'); return; }
+  if(Math.abs(a-ANSWERS.p1) <= 0.05){ markUnlocked($('puzzle1')); $('puzzle2').classList.add('active'); showFeedback('p1_feedback',`Correct — Vt = ${ANSWERS.p1.toFixed(2)} V`,true); }
+  else showFeedback('p1_feedback','Incorrect. Re-check the graph or use the √I_D method.');
+},300);} 
+
+function check2(){ if(locked) return; debounceButton($('p2_submit'), ()=>{
+  clearFeedback('p2_feedback'); const a=parseInt($('ans2').value,10);
+  if(!Number.isFinite(a)){ showFeedback('p2_feedback','Enter an integer (µA).'); return; }
+  if(Math.abs(a-ANSWERS.p2) <= 0){ markUnlocked($('puzzle2')); $('puzzle3').classList.add('active'); showFeedback('p2_feedback',`Correct — I_D = ${ANSWERS.p2} µA`,true); }
+  else showFeedback('p2_feedback',`Incorrect. Expected ≈ ${ANSWERS.p2} µA.`);
+},300);} 
+
+function check3(){ if(locked) return; debounceButton($('p3_submit'), ()=>{
+  clearFeedback('p3_feedback'); const a=parseFloat($('ans3').value);
+  if(!Number.isFinite(a)){ showFeedback('p3_feedback','Enter a numeric value.'); return; }
+  if(Math.abs(a-ANSWERS.p3) <= 0.02){ markUnlocked($('puzzle3')); $('puzzle4').classList.add('active'); showFeedback('p3_feedback',`Correct — Vt' = ${ANSWERS.p3.toFixed(4)} V`,true); }
+  else showFeedback('p3_feedback',`Incorrect. Expected ≈ ${ANSWERS.p3.toFixed(4)} V.`);
+},300);} 
+
+function check4(){ if(locked) return; debounceButton($('p4_submit'), ()=>{
+  clearFeedback('p4_feedback'); const a=parseFloat($('ans4').value);
+  if(!Number.isFinite(a)){ showFeedback('p4_feedback','Enter a numeric value.'); return; }
+  if(Math.abs(a-ANSWERS.p4) <= 0.05){ markUnlocked($('puzzle4')); showFeedback('p4_feedback',`Correct — V_M ≈ ${ANSWERS.p4.toFixed(2)} V`,true); locked=true; setTimeout(()=>triggerDoor(true),400); }
+  else showFeedback('p4_feedback',`Incorrect. Expected ≈ ${ANSWERS.p4.toFixed(2)} V.`);
+},300);} 
+
+// attach Enter key submit handlers for accessibility
+['ans1','ans2','ans3','ans4'].forEach(id=>{ const el=$(id); el.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ if(id==='ans1') check1(); if(id==='ans2') check2(); if(id==='ans3') check3(); if(id==='ans4') check4(); } }); });
+
+// attach buttons after DOM ready (some already attached earlier)
+
+/* ------------------ Confetti + Particles (unchanged) ------------------ */
+const confettiCanvas = $('confetti'); const ctx = confettiCanvas.getContext('2d'); let confettiParticles = [];
+function resizeCanvas(){ confettiCanvas.width = window.innerWidth; confettiCanvas.height = window.innerHeight; }
+window.addEventListener('resize', resizeCanvas); resizeCanvas();
+function random(min,max){ return Math.random()*(max-min)+min }
+class Particle{ constructor(x,y,dx,dy, size, color, shape='rect'){ this.x=x; this.y=y; this.dx=dx; this.dy=dy; this.size=size; this.color=color; this.life=1; this.shape=shape; this.rot = random(0,360); this.rotSpeed = random(-6,6); }
+  update(dt){ this.x += this.dx*dt; this.y += this.dy*dt; this.dy += 200*dt; this.rot += this.rotSpeed*dt; this.life -= 0.7*dt; }
+  draw(ctx){ ctx.save(); ctx.translate(this.x,this.y); ctx.rotate(this.rot*Math.PI/180); ctx.globalAlpha = Math.max(0,Math.min(1,this.life)); ctx.fillStyle = this.color; if(this.shape==='rect') ctx.fillRect(-this.size/2,-this.size/2,this.size,this.size); else { ctx.beginPath(); ctx.arc(0,0,this.size/2,0,Math.PI*2); ctx.fill(); } ctx.restore(); }
+}
+function spawnConfettiBurst(cx,cy,count=80){ const colors = ['#00ffd1','#7c5cff','#66e0c6','#9ff']; for(let i=0;i<count;i++){ const angle = random(0,Math.PI*2); const speed = random(120,520); const dx=Math.cos(angle)*speed; const dy=Math.sin(angle)*speed*-0.6; const size=random(6,14); confettiParticles.push(new Particle(cx,cy,dx,dy,size,colors[Math.floor(random(0,colors.length))])); } }
+let lastTime = performance.now(); function confettiLoop(now){ const dt = (now-lastTime)/1000; lastTime = now; ctx.clearRect(0,0,confettiCanvas.width,confettiCanvas.height); confettiParticles = confettiParticles.filter(p=>p.life>0 && p.y < confettiCanvas.height+100); confettiParticles.forEach(p=>{ p.update(dt); p.draw(ctx); }); requestAnimationFrame(confettiLoop); } requestAnimationFrame(confettiLoop);
+
+/* ------------------ WebAudio effects (unchanged) ------------------ */
+const AudioCtx = window.AudioContext || window.webkitAudioContext; const audioCtx = AudioCtx ? new AudioCtx() : null;
+function playBeep(){ if(!audioCtx) return; const t = audioCtx.currentTime; const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type='sine'; o.frequency.setValueAtTime(880,t); g.gain.setValueAtTime(0.001,t); g.gain.exponentialRampToValueAtTime(0.25,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.20); o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.22); }
+function playSwoosh(){ if(!audioCtx) return; const t = audioCtx.currentTime; const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(300,t); o.frequency.exponentialRampToValueAtTime(80,t+0.6); g.gain.setValueAtTime(0.001,t); g.gain.exponentialRampToValueAtTime(0.15,t+0.05); g.gain.exponentialRampToValueAtTime(0.0001,t+0.9); o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+1); }
+
+/* ------------------ Door trigger (finale) ------------------ */
+function triggerDoor(withEffects=true){ document.querySelectorAll('.puzzle').forEach(p=>p.style.display='none'); $('door-scene').style.display='block'; setTimeout(()=>{ document.querySelector('.door.left').classList.add('open'); document.querySelector('.door.right').classList.add('open'); if(withEffects){ playBeep(); setTimeout(()=>playSwoosh(),120); const cx = window.innerWidth/2; const cy = window.innerHeight/3; spawnConfettiBurst(cx,cy,140); } }, 420); setTimeout(()=>{ $('access').classList.add('show'); if(withEffects) spawnConfettiBurst(window.innerWidth/2, window.innerHeight/2, 80); }, 1600); }
+
+// instructor key in console
+console.info('Instructor key — computed answers:', ANSWERS);
+</script>
+</body>
+</html>
